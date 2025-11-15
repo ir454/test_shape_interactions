@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -133,7 +133,17 @@ function updateMovement(){
 // -------------------- AUDIO --------------------
 let audioCtx, audioStarted=false;
 const circleAudio=[];
-const melody=[261.63,293.66,329.63,392.00,440.00];
+
+// --- C-minor scale (C, D, Eb, F, G, Ab, Bb) ---
+const melody = [
+    261.63,  // C
+    293.66,  // D
+    311.13,  // Eb
+    349.23,  // F
+    392.00,  // G
+    415.30,  // Ab
+    466.16   // Bb
+];
 
 function createImpulseResponse(ctx,duration=1.0,decay=1.0){
     const rate=ctx.sampleRate;
@@ -196,8 +206,19 @@ function updateMelody(){
             const freq=melody[idx];
             const color=new THREE.Color(`hsl(${Math.random()*360},100%,50%)`);
             circles[i].targetColor.copy(color); c.lastNoteColor=color;
-            c.osc.frequency.setValueAtTime(freq,now);
-            c.nextNoteTime=now+0.35+Math.random()*0.15;
+
+            // --- Set oscillator frequency
+            c.osc.frequency.setValueAtTime(freq, now);
+
+            // --- Staccato envelope
+            const g = c.gain.gain;
+            g.cancelScheduledValues(now);
+            g.setValueAtTime(0.0001, now);
+            g.linearRampToValueAtTime(0.4, now + 0.03);   // quick attack
+            g.linearRampToValueAtTime(0.0001, now + 0.12); // short release = staccato
+
+            // --- Next note timing
+            c.nextNoteTime = now + 0.18 + Math.random() * 0.08;
             c.currentFreq=freq;
         }
     }
@@ -210,23 +231,17 @@ function updateAudioSpatial(){
     audioCtx.listener.positionY.value=camera.position.y;
     audioCtx.listener.positionZ.value=camera.position.z;
     const forward=new THREE.Vector3(0,0,-1).applyEuler(camera.rotation);
-    audioCtx.listener.forwardX.value=forward.x;
-    audioCtx.listener.forwardY.value=forward.y;
-    audioCtx.listener.forwardZ.value=forward.z;
+    audioCtx.listener.forwardX.value=forward.x; audioCtx.listener.forwardY.value=forward.y; audioCtx.listener.forwardZ.value=forward.z;
     audioCtx.listener.upX.value=0; audioCtx.listener.upY.value=1; audioCtx.listener.upZ.value=0;
 
     for(let i=0;i<4;i++){
         const src=circleAudio[i];
         const pos=circles[i].mesh.position;
-        src.panner.positionX.value=pos.x;
-        src.panner.positionY.value=pos.y;
-        src.panner.positionZ.value=pos.z;
-        const dist=camera.position.distanceTo(pos), maxDist=25, t=Math.min(dist/maxDist,1);
-        const vol=Math.pow(1-t,3);
-        src.gain.gain.linearRampToValueAtTime(vol,audioCtx.currentTime+0.1);
-        src.currentVolume=vol;
-        const minCut=600,maxCut=20000;
-        src.lowpass.frequency.linearRampToValueAtTime(minCut+(maxCut-minCut)*Math.pow(1-t,2.2),audioCtx.currentTime+0.1);
+        src.panner.positionX.value=pos.x; src.panner.positionY.value=pos.y; src.panner.positionZ.value=pos.z;
+        const dist=camera.position.distanceTo(pos); const maxDist=25; const t=Math.min(dist/maxDist,1);
+        const vol=Math.pow(1-t,3); src.gain.gain.linearRampToValueAtTime(vol,audioCtx.currentTime+0.1); src.currentVolume=vol;
+        const minCut=600,maxCut=20000; const cutoff=minCut+(maxCut-minCut)*Math.pow(1-t,2.2);
+        src.lowpass.frequency.linearRampToValueAtTime(cutoff,audioCtx.currentTime+0.1);
     }
 }
 
@@ -318,7 +333,7 @@ function extrudeFloorRandom(){
     floorMesh.geometry.computeVertexNormals();
 }
 
-// -------------------- RANDOM WIRE RECTANGLES --------------------
+// -------------------- RANDOM WIRE RECTANGLES WITH FADING --------------------
 function addRandomWireRectangle(){
     const width = Math.random()*4+1;
     const height = Math.random()*3+0.5;
@@ -350,101 +365,6 @@ function stopAudio(){
     audioStarted=false;
 }
 
-/* ============================================================
-        🌌  ADDED: PERLIN NOISE SKY
-============================================================ */
-
-// Simple Perlin noise generator
-const Perlin = {
-    grad3: [
-        [1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],
-        [1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],
-        [0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]
-    ],
-    p: [],
-    perm: [],
-    init() {
-        for(let i=0;i<256;i++) this.p[i] = Math.floor(Math.random()*256);
-        this.perm = new Array(512);
-        for(let i=0;i<512;i++) this.perm[i] = this.p[i & 255];
-    },
-    dot(g,x,y){ return g[0]*x + g[1]*y; },
-    fade(t){ return t*t*t*(t*(t*6-15)+10); },
-    lerp(t,a,b){ return a + t*(b-a); },
-    noise(x,y){
-        let X=Math.floor(x)&255;
-        let Y=Math.floor(y)&255;
-        x-=Math.floor(x);
-        y-=Math.floor(y);
-        let fx=this.fade(x), fy=this.fade(y);
-        let g00=this.grad3[this.perm[X+this.perm[Y]]%12];
-        let g01=this.grad3[this.perm[X+this.perm[Y+1]]%12];
-        let g10=this.grad3[this.perm[X+1+this.perm[Y]]%12];
-        let g11=this.grad3[this.perm[X+1+this.perm[Y+1]]%12];
-        return this.lerp(fy,
-            this.lerp(fx,this.dot(g00,x,y),this.dot(g10,x-1,y)),
-            this.lerp(fx,this.dot(g01,x,y-1),this.dot(g11,x-1,y-1))
-        );
-    }
-};
-Perlin.init();
-
-// SKY PARAMETERS
-const skyLines = [];
-const skyWidth = 120;
-const skyDepth = 120;
-const skySegX = 80;
-const skySegZ = 80;
-const skyHeight = 25;
-
-// CONSTRUCT SKY LINES
-for (let i = 0; i < skySegZ; i++) {
-    for (let j = 0; j < skySegX; j++) {
-        const x1 = (j / skySegX) * skyWidth - skyWidth/2;
-        const x2 = ((j + 1) / skySegX) * skyWidth - skyWidth/2;
-        const z  = (i / skySegZ) * skyDepth - skyDepth/2;
-
-        const geom = new THREE.BufferGeometry();
-        const pos = new Float32Array(6);
-        geom.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-
-        const mat = new THREE.LineBasicMaterial({
-            color: 0x3366ff,
-            transparent: true,
-            opacity: 0.7
-        });
-
-        const line = new THREE.Line(geom, mat);
-        scene.add(line);
-
-        skyLines.push({ line, geom, x1, x2, z });
-    }
-}
-
-function updateSky() {
-    const t = performance.now() * 0.00015;
-
-    for (let i = 0; i < skyLines.length; i++) {
-        const s = skyLines[i];
-        const pos = s.geom.attributes.position.array;
-
-        const n1 = Perlin.noise(s.x1 * 0.05 + t, s.z * 0.05);
-        const n2 = Perlin.noise(s.x2 * 0.05 + t, s.z * 0.05);
-
-        pos[0] = s.x1;
-        pos[1] = skyHeight + n1 * 4;
-        pos[2] = s.z;
-
-        pos[3] = s.x2;
-        pos[4] = skyHeight + n2 * 4;
-        pos[5] = s.z;
-
-        s.geom.attributes.position.needsUpdate = true;
-    }
-}
-
-/* ============================================================ */
-
 // -------------------- ANIMATE --------------------
 function animate(){
     requestAnimationFrame(animate);
@@ -453,7 +373,6 @@ function animate(){
     updateAudioSpatial();
     updateCirclesVisuals();
     updateMiniMap();
-    updateSky(); // 🌌 <-- ADDED
     if(timerSeconds <= 240) fadeRectangles();
     renderer.render(scene,camera);
 }
