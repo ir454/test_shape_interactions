@@ -46,6 +46,50 @@
 <script type="module">
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
 
+// -------------------- SIMPLEX / PERLIN NOISE --------------------
+class PerlinNoise{
+    constructor(){
+        this.grad3 = [
+            [1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],
+            [1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],
+            [0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]
+        ];
+        this.p = [];
+        for(let i=0;i<256;i++) this.p[i]=Math.floor(Math.random()*256);
+        this.perm = [];
+        for(let i=0;i<512;i++) this.perm[i]=this.p[i & 255];
+    }
+    dot(g, x, y, z){ return g[0]*x+g[1]*y+g[2]*z; }
+    noise(x, y, z){
+        const floorX=Math.floor(x), floorY=Math.floor(y), floorZ=Math.floor(z);
+        const X=floorX&255, Y=floorY&255, Z=floorZ&255;
+        x-=floorX; y-=floorY; z-=floorZ;
+        const u=x*x*x*(x*(x*6-15)+10);
+        const v=y*y*y*(y*(y*6-15)+10);
+        const w=z*z*z*(z*(z*6-15)+10);
+        const A=this.perm[X]+Y, AA=this.perm[A]+Z, AB=this.perm[A+1]+Z;
+        const B=this.perm[X+1]+Y, BA=this.perm[B]+Z, BB=this.perm[B+1]+Z;
+        const gAA=this.grad3[this.perm[AA]%12], gBA=this.grad3[this.perm[BA]%12];
+        const gAB=this.grad3[this.perm[AB]%12], gBB=this.grad3[this.perm[BB]%12];
+        const gAA1=this.grad3[this.perm[AA+1]%12], gBA1=this.grad3[this.perm[BA+1]%12];
+        const gAB1=this.grad3[this.perm[AB+1]%12], gBB1=this.grad3[this.perm[BB+1]%12];
+        const lerp=(a,b,t)=>a+(b-a)*t;
+        const n000=this.dot(gAA,x,y,z);
+        const n100=this.dot(gBA,x-1,y,z);
+        const n010=this.dot(gAB,x,y-1,z);
+        const n110=this.dot(gBB,x-1,y-1,z);
+        const n001=this.dot(gAA1,x,y,z-1);
+        const n101=this.dot(gBA1,x-1,y,z-1);
+        const n011=this.dot(gAB1,x,y-1,z-1);
+        const n111=this.dot(gBB1,x-1,y-1,z-1);
+        const nx00=lerp(n000,n100,u), nx01=lerp(n001,n101,u);
+        const nx10=lerp(n010,n110,u), nx11=lerp(n011,n111,u);
+        const nxy0=lerp(nx00,nx10,v), nxy1=lerp(nx01,nx11,v);
+        return lerp(nxy0,nxy1,w);
+    }
+}
+const perlin = new PerlinNoise();
+
 // -------------------- SCENE --------------------
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
@@ -61,7 +105,6 @@ document.body.appendChild(renderer.domElement);
 const floorSize = 60;
 const floorSegments = 60;
 const floorGeometry = new THREE.PlaneGeometry(floorSize,floorSize,floorSegments,floorSegments);
-// Floor starts white, but color will change dynamically
 const floorMaterial = new THREE.MeshBasicMaterial({color:0xffffff, wireframe:true, transparent:true, opacity:0.5});
 const floorMesh = new THREE.Mesh(floorGeometry,floorMaterial);
 floorMesh.rotation.x=-Math.PI/2;
@@ -136,7 +179,7 @@ let audioCtx, audioStarted=false;
 const circleAudio=[];
 
 // --- C-minor pentatonic over 3 octaves ---
-const baseMelody = [261.63, 311.13, 349.23, 392.00, 466.16]; // C, Eb, F, G, Bb
+const baseMelody = [261.63, 311.13, 349.23, 392.00, 466.16];
 const melody = [];
 for(let o=0;o<3;o++){ 
     const octaveMul = Math.pow(2,o);
@@ -205,11 +248,6 @@ function startTimer(){
             circleAudio.forEach(c=>{
                 c.gain.gain.linearRampToValueAtTime(fadeGain * 0.3, audioCtx.currentTime + 0.1);
             });
-        }
-        if(timerSeconds<=0){ 
-            clearInterval(timerInterval); 
-            stopAudio(); 
-            stopDrumMachine(); 
         }
         const min=Math.floor(timerSeconds/60).toString().padStart(2,'0');
         const sec=(timerSeconds%60).toString().padStart(2,'0');
@@ -300,115 +338,55 @@ function updateCirclesVisuals(){
     }
 }
 
-// -------------------- MINI-MAP --------------------
-const miniMap=document.getElementById("miniMap");
-const miniCtx=miniMap.getContext("2d");
-function updateMiniMap(){
-    miniCtx.clearRect(0,0,miniMap.width,miniMap.height);
-    miniCtx.fillStyle="#111";
-    miniCtx.fillRect(0,0,miniMap.width,miniMap.height);
-    circles.forEach((c,i)=>{
-        const x=Math.floor((c.mesh.position.x+floorSize/2)/floorSize*miniMap.width);
-        const y=Math.floor((c.mesh.position.z+floorSize/2)/floorSize*miniMap.height);
-        miniCtx.fillStyle=`#${neonColors[i].toString(16).padStart(6,'0')}`;
-        miniCtx.beginPath(); miniCtx.arc(x,y,5,0,Math.PI*2); miniCtx.fill();
-    });
-    const ux=Math.floor((camera.position.x+floorSize/2)/floorSize*miniMap.width);
-    const uy=Math.floor((camera.position.z+floorSize/2)/floorSize*miniMap.height);
-    miniCtx.fillStyle="red";
-    miniCtx.beginPath(); miniCtx.arc(ux,uy,5,0,Math.PI*2); miniCtx.fill();
+// -------------------- RIBBON VISUALIZATION --------------------
+let ribbon=null;
+let ribbonActive=false;
+function createRibbon(){
+    const ribbonPoints=[];
+    const ribbonSegments=80;
+    for(let i=0;i<ribbonSegments;i++) ribbonPoints.push(new THREE.Vector3(0,i*0.1,0));
+    const ribbonGeom=new THREE.BufferGeometry().setFromPoints(ribbonPoints);
+    const ribbonMat=new THREE.LineBasicMaterial({color:0xff00ff, transparent:true, opacity:0.8});
+    ribbon=new THREE.Line(ribbonGeom,ribbonMat);
+    scene.add(ribbon);
+    ribbonActive=true;
 }
 
-// -------------------- DRUM MACHINE --------------------
-let drumActive=false;
-let drumInterval=null;
-const drumPosition=new THREE.Vector3(0,3,0);
-const rectangles=[];
-
-function startDrumMachine(){
-    if(!audioStarted || drumActive) return;
-    drumActive=true;
-    drumInterval=setInterval(()=>{
-        const now=audioCtx.currentTime;
-        const kick=audioCtx.createOscillator();
-        const kickGain=audioCtx.createGain();
-        kick.frequency.setValueAtTime(150,now); kick.type="sine";
-        kickGain.gain.setValueAtTime(0.5,now); kickGain.gain.exponentialRampToValueAtTime(0.001,now+0.2);
-        kick.connect(kickGain);
-        const panner=audioCtx.createPanner();
-        panner.panningModel="HRTF";
-        panner.positionX.value=drumPosition.x; panner.positionY.value=drumPosition.y; panner.positionZ.value=drumPosition.z;
-        kickGain.connect(panner); panner.connect(audioCtx.destination);
-        kick.start(now); kick.stop(now+0.2);
-
-        extrudeFloorRandom();
-        addRandomWireRectangle();
-    }, 300 + Math.random()*200);
-}
-
-function stopDrumMachine(){
-    if(drumInterval) clearInterval(drumInterval);
-    drumActive=false;
-}
-
-// -------------------- FLOOR EXTRUSION RANDOM --------------------
-function extrudeFloorRandom(){
-    const verts=floorMesh.geometry.attributes.position;
-    for(let i=0;i<verts.count;i++){
-        if(Math.random()<0.05){
-            verts.setY(i,verts.getY(i)+Math.random()*1.0);
-        }
+function updateRibbon(){
+    if(!ribbonActive) return;
+    const time=performance.now()/1000;
+    const positions=ribbon.geometry.attributes.position.array;
+    const segments=positions.length/3;
+    for(let i=0;i<segments;i++){
+        const idx=i*3;
+        positions[idx]=Math.sin(time*0.5+i*0.1)*5;
+        positions[idx+1]=i*0.1+2+Math.sin(time*0.2+i*0.05)*0.5;
+        positions[idx+2]=Math.cos(time*0.5+i*0.1)*5;
     }
-    verts.needsUpdate=true;
-    floorMesh.geometry.computeVertexNormals();
-    
-    // Update floor color dynamically based on random noise
-    const t = Math.random();
-    floorMesh.material.color.setHSL(t, 0.6, 0.5);
+    const hue=(time*40)%360;
+    ribbon.material.color.setHSL(hue/360,1,0.5);
+    ribbon.geometry.attributes.position.needsUpdate=true;
 }
 
-// -------------------- RANDOM WIRE RECTANGLES WITH RANDOM COLOR --------------------
-function addRandomWireRectangle(){
-    const width = Math.random()*4+1;
-    const height = Math.random()*3+0.5;
-    const depth = Math.random()*4+1;
-    const x = (Math.random()-0.5)*floorSize;
-    const z = (Math.random()-0.5)*floorSize;
-    const geometry = new THREE.BoxGeometry(width,height,depth);
-    
-    // Assign a random neon color for each rectangle
-    const color = new THREE.Color(`hsl(${Math.random()*360},100%,50%)`);
-    const material = new THREE.MeshBasicMaterial({color: color, wireframe:true, transparent:true, opacity:1});
-    
-    const mesh = new THREE.Mesh(geometry,material);
-    mesh.position.set(x,height/2,z);
-    scene.add(mesh);
-    rectangles.push(mesh);
-}
-
-// -------------------- RECTANGLE FADE OUT --------------------
-function fadeRectangles(){
-    rectangles.forEach((rect,i)=>{
-        rect.material.opacity -= 0.01;
-        if(rect.material.opacity <= 0){
-            scene.remove(rect);
-            rectangles.splice(i,1);
-        }
+// -------------------- MINI MAP --------------------
+const miniMapCanvas=document.getElementById("miniMap");
+const miniMapCtx=miniMapCanvas.getContext("2d");
+function updateMiniMap(){
+    miniMapCtx.fillStyle="#111"; miniMapCtx.fillRect(0,0,150,150);
+    const scale=2; const offset=75;
+    circles.forEach(c=>{
+        miniMapCtx.fillStyle="#0ff";
+        miniMapCtx.beginPath();
+        miniMapCtx.arc(c.mesh.position.x*scale+offset,c.mesh.position.z*scale+offset,5,0,Math.PI*2);
+        miniMapCtx.fill();
     });
+    miniMapCtx.fillStyle="#f00";
+    miniMapCtx.beginPath();
+    miniMapCtx.arc(camera.position.x*scale+offset,camera.position.z*scale+offset,5,0,Math.PI*2);
+    miniMapCtx.fill();
 }
 
-// -------------------- AUDIO STOP --------------------
-function stopAudio(){
-    if(!audioStarted) return;
-    circleAudio.forEach(c=>{
-        c.osc.stop();
-        c.osc.disconnect();
-        c.gain.disconnect();
-    });
-    audioStarted=false;
-}
-
-// -------------------- ANIMATE --------------------
+// -------------------- ANIMATION --------------------
 function animate(){
     requestAnimationFrame(animate);
     updateMovement();
@@ -416,19 +394,21 @@ function animate(){
     updateAudioSpatial();
     updateCirclesVisuals();
     updateMiniMap();
-    fadeRectangles();
+    if(timerSeconds <= 180 && !ribbonActive) createRibbon(); // ribbon at 3 minutes
+    updateRibbon();
     renderer.render(scene,camera);
 }
 animate();
 
-window.addEventListener("resize", ()=>{
+// -------------------- RESIZE --------------------
+window.addEventListener("resize",()=>{
     camera.aspect=window.innerWidth/window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth,window.innerHeight);
 });
 
 // -------------------- START AUDIO BUTTON --------------------
-document.getElementById("startAudio").addEventListener("click", startAudio);
+document.getElementById("startAudio").addEventListener("click",startAudio);
 
 </script>
 </body>
