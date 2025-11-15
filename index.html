@@ -61,6 +61,7 @@ document.body.appendChild(renderer.domElement);
 const floorSize = 60;
 const floorSegments = 60;
 const floorGeometry = new THREE.PlaneGeometry(floorSize,floorSize,floorSegments,floorSegments);
+// Floor starts white, but color will change dynamically
 const floorMaterial = new THREE.MeshBasicMaterial({color:0xffffff, wireframe:true, transparent:true, opacity:0.5});
 const floorMesh = new THREE.Mesh(floorGeometry,floorMaterial);
 floorMesh.rotation.x=-Math.PI/2;
@@ -137,7 +138,7 @@ const circleAudio=[];
 // --- C-minor pentatonic over 3 octaves ---
 const baseMelody = [261.63, 311.13, 349.23, 392.00, 466.16]; // C, Eb, F, G, Bb
 const melody = [];
-for(let o=0;o<3;o++){ // 3 octaves
+for(let o=0;o<3;o++){ 
     const octaveMul = Math.pow(2,o);
     baseMelody.forEach(n=>melody.push(n*octaveMul));
 }
@@ -196,10 +197,20 @@ function startTimer(){
         timerSeconds--;
         if(timerSeconds===240) startDrumMachine();
         if(timerSeconds===120) stopDrumMachine();
-        if(timerSeconds===60){ // 1 minute left
+        if(timerSeconds===60){
             circleAudio.forEach(c=>c.pointillistic=true);
         }
-        if(timerSeconds<=0){ clearInterval(timerInterval); stopAudio(); stopDrumMachine(); }
+        if(timerSeconds <= 10 && timerSeconds > 0 && audioStarted){
+            const fadeGain = timerSeconds / 10; 
+            circleAudio.forEach(c=>{
+                c.gain.gain.linearRampToValueAtTime(fadeGain * 0.3, audioCtx.currentTime + 0.1);
+            });
+        }
+        if(timerSeconds<=0){ 
+            clearInterval(timerInterval); 
+            stopAudio(); 
+            stopDrumMachine(); 
+        }
         const min=Math.floor(timerSeconds/60).toString().padStart(2,'0');
         const sec=(timerSeconds%60).toString().padStart(2,'0');
         document.getElementById("timer").innerText=min+":"+sec;
@@ -217,7 +228,6 @@ function updateMelody(){
             const color = new THREE.Color(`hsl(${Math.random()*360},100%,50%)`);
             circles[i].targetColor.copy(color); c.lastNoteColor=color;
 
-            // Smooth pitch transition
             c.osc.frequency.cancelScheduledValues(now);
             c.osc.frequency.setValueAtTime(c.currentFreq || freq, now);
             c.osc.frequency.exponentialRampToValueAtTime(freq, now + 0.08);
@@ -225,7 +235,6 @@ function updateMelody(){
             const g = c.gain.gain;
             g.cancelScheduledValues(now);
 
-            // Pointillistic mode: short staccato beeps
             if(c.pointillistic){
                 g.setValueAtTime(0.0001, now);
                 g.linearRampToValueAtTime(0.3, now + 0.02);
@@ -352,9 +361,13 @@ function extrudeFloorRandom(){
     }
     verts.needsUpdate=true;
     floorMesh.geometry.computeVertexNormals();
+    
+    // Update floor color dynamically based on random noise
+    const t = Math.random();
+    floorMesh.material.color.setHSL(t, 0.6, 0.5);
 }
 
-// -------------------- RANDOM WIRE RECTANGLES WITH FADING --------------------
+// -------------------- RANDOM WIRE RECTANGLES WITH RANDOM COLOR --------------------
 function addRandomWireRectangle(){
     const width = Math.random()*4+1;
     const height = Math.random()*3+0.5;
@@ -362,7 +375,11 @@ function addRandomWireRectangle(){
     const x = (Math.random()-0.5)*floorSize;
     const z = (Math.random()-0.5)*floorSize;
     const geometry = new THREE.BoxGeometry(width,height,depth);
-    const material = new THREE.MeshBasicMaterial({color:0xffffff, wireframe:true, transparent:true, opacity:1});
+    
+    // Assign a random neon color for each rectangle
+    const color = new THREE.Color(`hsl(${Math.random()*360},100%,50%)`);
+    const material = new THREE.MeshBasicMaterial({color: color, wireframe:true, transparent:true, opacity:1});
+    
     const mesh = new THREE.Mesh(geometry,material);
     mesh.position.set(x,height/2,z);
     scene.add(mesh);
@@ -380,9 +397,14 @@ function fadeRectangles(){
     });
 }
 
-// -------------------- STOP AUDIO --------------------
+// -------------------- AUDIO STOP --------------------
 function stopAudio(){
-    if(audioCtx) audioCtx.close();
+    if(!audioStarted) return;
+    circleAudio.forEach(c=>{
+        c.osc.stop();
+        c.osc.disconnect();
+        c.gain.disconnect();
+    });
     audioStarted=false;
 }
 
@@ -394,13 +416,12 @@ function animate(){
     updateAudioSpatial();
     updateCirclesVisuals();
     updateMiniMap();
-    if(timerSeconds <= 240) fadeRectangles();
+    fadeRectangles();
     renderer.render(scene,camera);
 }
 animate();
 
-// -------------------- RESIZE --------------------
-window.addEventListener("resize",()=>{
+window.addEventListener("resize", ()=>{
     camera.aspect=window.innerWidth/window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth,window.innerHeight);
