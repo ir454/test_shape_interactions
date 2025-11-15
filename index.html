@@ -1,79 +1,474 @@
-<!DOCTYPE html>
+<!DOCTYPE html> 
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Three.js Cube</title>
-
-    <!-- Three.js CDN -->
-    <script src="https://unpkg.com/three@0.161.0/build/three.min.js"></script>
-
-    <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-            background: #222;
-        }
-    </style>
+<meta charset="UTF-8">
+<title>3D Audio Visual Experience</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+  canvas { display: block; }
+  #uiContainer {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: rgba(0,0,0,0.4);
+    padding: 10px;
+    border-radius: 8px;
+  }
+  #timer { font-size: 28px; color: white; font-weight: bold; text-align: center; }
+  #startAudio {
+    padding: 8px 16px;
+    background: #ff4444;
+    color: white;
+    font-size: 16px;
+    border: none;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+  #miniMap {
+    width: 150px;
+    height: 150px;
+    background: #111;
+    border: 2px solid white;
+    border-radius: 6px;
+  }
+</style>
 </head>
 <body>
+<div id="uiContainer">
+  <div id="timer">05:00</div>
+  <canvas id="miniMap"></canvas>
+  <button id="startAudio">Click to Enable Sound</button>
+</div>
 
-<script>
-// --- Scene ---
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
+
+// -------------------- SCENE --------------------
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x222222);
+scene.background = new THREE.Color(0x000000);
 
-// --- Camera ---
-const camera = new THREE.PerspectiveCamera(
-    75,
-    window.innerWidth / window.innerHeight,
-    0.1,
-    1000
-);
-camera.position.set(3, 3, 4);
-camera.lookAt(0, 0, 0);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 200);
+camera.position.set(0,1.5,15);
 
-// --- Renderer ---
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// --- Lighting ---
-const ambient = new THREE.AmbientLight(0xffffff, 0.7);
-scene.add(ambient);
+// -------------------- FLOOR --------------------
+const floorSize = 60;
+const floorSegments = 60;
+const floorGeometry = new THREE.PlaneGeometry(floorSize,floorSize,floorSegments,floorSegments);
+const floorMaterial = new THREE.MeshBasicMaterial({color:0xffffff, wireframe:true, transparent:true, opacity:0.5});
+const floorMesh = new THREE.Mesh(floorGeometry,floorMaterial);
+floorMesh.rotation.x=-Math.PI/2;
+scene.add(floorMesh);
 
-const directional = new THREE.DirectionalLight(0xffffff, 1);
-directional.position.set(5, 5, 5);
-scene.add(directional);
+// -------------------- LIGHT --------------------
+const light = new THREE.DirectionalLight(0xffffff,1);
+light.position.set(5,10,7);
+scene.add(light);
 
-// --- Cube ---
-const geometry = new THREE.BoxGeometry(1, 1, 1);
-const material = new THREE.MeshStandardMaterial({
-    color: 0x00aaff,
-    roughness: 0.3,
-    metalness: 0.1
-});
-const cube = new THREE.Mesh(geometry, material);
-scene.add(cube);
+// -------------------- FLOATING CIRCLES --------------------
+const circles=[];
+const circlePositions = [
+    new THREE.Vector3(-10,0.5,-10),
+    new THREE.Vector3(10,0.5,-10),
+    new THREE.Vector3(-10,0.5,10),
+    new THREE.Vector3(10,0.5,10)
+];
+const neonColors=[0xff00ff,0x00ffff,0xffff00,0xff5500];
+for(let i=0;i<4;i++){
+    const mat = new THREE.MeshStandardMaterial({color:neonColors[i],emissive:neonColors[i],emissiveIntensity:0.6});
+    const circle = new THREE.Mesh(new THREE.SphereGeometry(1,16,16), mat);
+    circle.position.copy(circlePositions[i]);
+    scene.add(circle);
+    circles.push({mesh:circle, currentColor:new THREE.Color(neonColors[i]), targetColor:new THREE.Color(neonColors[i]), baseY:circle.position.y});
+}
 
-// --- Animation Loop ---
-function animate() {
+// -------------------- SEGMENTS --------------------
+const segmentsPerCircle = 15;
+const circleSegments=[];
+for(let i=0;i<4;i++){
+    const segs=[];
+    for(let j=0;j<segmentsPerCircle;j++){
+        const geom = new THREE.BufferGeometry();
+        const positions = new Float32Array(6);
+        geom.setAttribute('position', new THREE.BufferAttribute(positions,3));
+        const mat = new THREE.LineBasicMaterial({color:neonColors[i]});
+        const line = new THREE.Line(geom, mat);
+        scene.add(line);
+        segs.push({line, geom});
+    }
+    circleSegments.push(segs);
+}
+
+// -------------------- USER MOVEMENT --------------------
+const keys={};
+document.addEventListener("keydown", e=>keys[e.key]=true);
+document.addEventListener("keyup", e=>delete keys[e.key]);
+let yaw=0, pitch=0;
+
+function updateMovement(){
+    const moveSpeed=0.13, rotSpeed=0.02;
+    if(keys["ArrowLeft"]) yaw += rotSpeed;
+    if(keys["ArrowRight"]) yaw -= rotSpeed;
+    if(keys["ArrowUp"]) pitch += rotSpeed;
+    if(keys["ArrowDown"]) pitch -= rotSpeed;
+    camera.rotation.set(pitch,yaw,0);
+    const forward = new THREE.Vector3(-Math.sin(yaw),0,-Math.cos(yaw));
+    const right = new THREE.Vector3(Math.cos(yaw),0,-Math.sin(yaw));
+    if(keys["w"]||keys["W"]) camera.position.addScaledVector(forward,moveSpeed);
+    if(keys["s"]||keys["S"]) camera.position.addScaledVector(forward,-moveSpeed);
+    if(keys["a"]||keys["A"]) camera.position.addScaledVector(right,-moveSpeed);
+    if(keys["d"]||keys["D"]) camera.position.addScaledVector(right,moveSpeed);
+    if(keys["1"]){circles[0].mesh.position.copy(camera.position); circles[0].mesh.position.y=1; delete keys["1"];}
+    if(keys["2"]){circles[1].mesh.position.copy(camera.position); circles[1].mesh.position.y=1; delete keys["2"];}
+    if(keys["3"]){circles[2].mesh.position.copy(camera.position); circles[2].mesh.position.y=1; delete keys["3"];}
+    if(keys["4"]){circles[3].mesh.position.copy(camera.position); circles[3].mesh.position.y=1; delete keys["4"];}
+}
+
+// -------------------- AUDIO --------------------
+let audioCtx, audioStarted=false;
+const circleAudio=[];
+const melody=[261.63,293.66,329.63,392.00,440.00];
+
+function createImpulseResponse(ctx,duration=1.0,decay=1.0){
+    const rate=ctx.sampleRate;
+    const length=rate*duration;
+    const impulse=ctx.createBuffer(2,length,rate);
+    const left=impulse.getChannelData(0);
+    const right=impulse.getChannelData(1);
+    for(let i=0;i<length;i++){
+        const n=(length-i)/length;
+        const v=Math.random()*Math.pow(n,decay);
+        left[i]=v; right[i]=v;
+    }
+    return impulse;
+}
+
+function startAudio(){
+    audioCtx=new AudioContext();
+    const reverb=createImpulseResponse(audioCtx);
+    for(let i=0;i<4;i++){
+        const osc=audioCtx.createOscillator();
+        osc.type="triangle";
+        const panner=audioCtx.createPanner();
+        panner.panningModel="HRTF"; panner.refDistance=1.0; panner.maxDistance=60; panner.rolloffFactor=0.8;
+        const lowpass=audioCtx.createBiquadFilter(); lowpass.type="lowpass"; lowpass.frequency.value=20000;
+        const convolver=audioCtx.createConvolver(); convolver.buffer=reverb;
+        const reverbGain=audioCtx.createGain(); reverbGain.gain.value=0.10;
+        const gain=audioCtx.createGain(); gain.gain.value=0;
+        osc.connect(panner); panner.connect(lowpass); lowpass.connect(gain); gain.connect(audioCtx.destination);
+        osc.connect(convolver); convolver.connect(reverbGain); reverbGain.connect(audioCtx.destination);
+        osc.start();
+        circleAudio.push({osc,gain,panner,lowpass,nextNoteTime:audioCtx.currentTime+Math.random()*0.5,currentFreq:0,currentVolume:0,lastNoteColor:new THREE.Color(neonColors[i])});
+    }
+    audioStarted=true;
+    document.getElementById("startAudio").style.display="none";
+    startTimer();
+}
+
+// -------------------- TIMER --------------------
+let timerSeconds=300, timerInterval=null;
+function startTimer(){
+    timerInterval=setInterval(()=>{
+        timerSeconds--;
+        if(timerSeconds===240) startDrumMachine();
+        if(timerSeconds===120) stopDrumMachine();
+        if(timerSeconds<=0){ clearInterval(timerInterval); stopAudio(); stopDrumMachine(); }
+        const min=Math.floor(timerSeconds/60).toString().padStart(2,'0');
+        const sec=(timerSeconds%60).toString().padStart(2,'0');
+        document.getElementById("timer").innerText=min+":"+sec;
+    },1000);
+}
+
+// -------------------- MELODY --------------------
+function updateMelody(){
+    if(!audioStarted) return;
+    const now=audioCtx.currentTime;
+    for(let i=0;i<4;i++){
+        const c=circleAudio[i];
+        if(now>=c.nextNoteTime){
+            const idx=Math.floor(Math.random()*melody.length);
+            const freq=melody[idx];
+            const color=new THREE.Color(`hsl(${Math.random()*360},100%,50%)`);
+            circles[i].targetColor.copy(color); c.lastNoteColor=color;
+            c.osc.frequency.setValueAtTime(freq,now);
+            c.nextNoteTime=now+0.35+Math.random()*0.15;
+            c.currentFreq=freq;
+        }
+    }
+}
+
+// -------------------- SPATIAL AUDIO --------------------
+function updateAudioSpatial(){
+    if(!audioStarted) return;
+    audioCtx.listener.positionX.value=camera.position.x;
+    audioCtx.listener.positionY.value=camera.position.y;
+    audioCtx.listener.positionZ.value=camera.position.z;
+    const forward=new THREE.Vector3(0,0,-1).applyEuler(camera.rotation);
+    audioCtx.listener.forwardX.value=forward.x;
+    audioCtx.listener.forwardY.value=forward.y;
+    audioCtx.listener.forwardZ.value=forward.z;
+    audioCtx.listener.upX.value=0; audioCtx.listener.upY.value=1; audioCtx.listener.upZ.value=0;
+
+    for(let i=0;i<4;i++){
+        const src=circleAudio[i];
+        const pos=circles[i].mesh.position;
+        src.panner.positionX.value=pos.x;
+        src.panner.positionY.value=pos.y;
+        src.panner.positionZ.value=pos.z;
+        const dist=camera.position.distanceTo(pos), maxDist=25, t=Math.min(dist/maxDist,1);
+        const vol=Math.pow(1-t,3);
+        src.gain.gain.linearRampToValueAtTime(vol,audioCtx.currentTime+0.1);
+        src.currentVolume=vol;
+        const minCut=600,maxCut=20000;
+        src.lowpass.frequency.linearRampToValueAtTime(minCut+(maxCut-minCut)*Math.pow(1-t,2.2),audioCtx.currentTime+0.1);
+    }
+}
+
+// -------------------- VISUALS --------------------
+function updateCirclesVisuals(){
+    const time=performance.now()/1000;
+    for(let i=0;i<4;i++){
+        const circleData=circles[i];
+        circleData.mesh.position.y=circleData.baseY+Math.sin(time+i)*0.3;
+        circleData.currentColor.lerp(circleData.targetColor,0.02);
+        circleData.mesh.material.color.copy(circleData.currentColor);
+        circleData.mesh.material.emissive.copy(circleData.currentColor);
+        const segs=circleSegments[i];
+        for(let j=0;j<segs.length;j++){
+            const seg=segs[j];
+            const freq=circleAudio[i]?.currentFreq||440;
+            const amp=circleAudio[i]?.currentVolume||0;
+            const len=2*(0.5+amp)*Math.sin(freq*time+j);
+            const positions=seg.geom.attributes.position.array;
+            positions[0]=0; positions[1]=0; positions[2]=0;
+            positions[3]=0; positions[4]=len; positions[5]=0;
+            seg.geom.attributes.position.needsUpdate=true;
+            const brightness=0.5+0.5*amp;
+            seg.line.material.color.copy(circleData.currentColor).multiplyScalar(brightness);
+        }
+    }
+}
+
+// -------------------- MINI-MAP --------------------
+const miniMap=document.getElementById("miniMap");
+const miniCtx=miniMap.getContext("2d");
+function updateMiniMap(){
+    miniCtx.clearRect(0,0,miniMap.width,miniMap.height);
+    miniCtx.fillStyle="#111";
+    miniCtx.fillRect(0,0,miniMap.width,miniMap.height);
+    circles.forEach((c,i)=>{
+        const x=Math.floor((c.mesh.position.x+floorSize/2)/floorSize*miniMap.width);
+        const y=Math.floor((c.mesh.position.z+floorSize/2)/floorSize*miniMap.height);
+        miniCtx.fillStyle=`#${neonColors[i].toString(16).padStart(6,'0')}`;
+        miniCtx.beginPath(); miniCtx.arc(x,y,5,0,Math.PI*2); miniCtx.fill();
+    });
+    const ux=Math.floor((camera.position.x+floorSize/2)/floorSize*miniMap.width);
+    const uy=Math.floor((camera.position.z+floorSize/2)/floorSize*miniMap.height);
+    miniCtx.fillStyle="red";
+    miniCtx.beginPath(); miniCtx.arc(ux,uy,5,0,Math.PI*2); miniCtx.fill();
+}
+
+// -------------------- DRUM MACHINE --------------------
+let drumActive=false;
+let drumInterval=null;
+const drumPosition=new THREE.Vector3(0,3,0);
+const rectangles=[];
+
+function startDrumMachine(){
+    if(!audioStarted || drumActive) return;
+    drumActive=true;
+    drumInterval=setInterval(()=>{
+        const now=audioCtx.currentTime;
+        const kick=audioCtx.createOscillator();
+        const kickGain=audioCtx.createGain();
+        kick.frequency.setValueAtTime(150,now); kick.type="sine";
+        kickGain.gain.setValueAtTime(0.5,now); kickGain.gain.exponentialRampToValueAtTime(0.001,now+0.2);
+        kick.connect(kickGain);
+        const panner=audioCtx.createPanner();
+        panner.panningModel="HRTF";
+        panner.positionX.value=drumPosition.x; panner.positionY.value=drumPosition.y; panner.positionZ.value=drumPosition.z;
+        kickGain.connect(panner); panner.connect(audioCtx.destination);
+        kick.start(now); kick.stop(now+0.2);
+
+        extrudeFloorRandom();
+        addRandomWireRectangle();
+    }, 300 + Math.random()*200);
+}
+
+function stopDrumMachine(){
+    if(drumInterval) clearInterval(drumInterval);
+    drumActive=false;
+}
+
+// -------------------- FLOOR EXTRUSION RANDOM --------------------
+function extrudeFloorRandom(){
+    const verts=floorMesh.geometry.attributes.position;
+    for(let i=0;i<verts.count;i++){
+        if(Math.random()<0.05){
+            verts.setY(i,verts.getY(i)+Math.random()*1.0);
+        }
+    }
+    verts.needsUpdate=true;
+    floorMesh.geometry.computeVertexNormals();
+}
+
+// -------------------- RANDOM WIRE RECTANGLES --------------------
+function addRandomWireRectangle(){
+    const width = Math.random()*4+1;
+    const height = Math.random()*3+0.5;
+    const depth = Math.random()*4+1;
+    const x = (Math.random()-0.5)*floorSize;
+    const z = (Math.random()-0.5)*floorSize;
+    const geometry = new THREE.BoxGeometry(width,height,depth);
+    const material = new THREE.MeshBasicMaterial({color:0xffffff, wireframe:true, transparent:true, opacity:1});
+    const mesh = new THREE.Mesh(geometry,material);
+    mesh.position.set(x,height/2,z);
+    scene.add(mesh);
+    rectangles.push(mesh);
+}
+
+// -------------------- RECTANGLE FADE OUT --------------------
+function fadeRectangles(){
+    rectangles.forEach((rect,i)=>{
+        rect.material.opacity -= 0.01;
+        if(rect.material.opacity <= 0){
+            scene.remove(rect);
+            rectangles.splice(i,1);
+        }
+    });
+}
+
+// -------------------- STOP AUDIO --------------------
+function stopAudio(){
+    if(audioCtx) audioCtx.close();
+    audioStarted=false;
+}
+
+/* ============================================================
+        🌌  ADDED: PERLIN NOISE SKY
+============================================================ */
+
+// Simple Perlin noise generator
+const Perlin = {
+    grad3: [
+        [1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],
+        [1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],
+        [0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]
+    ],
+    p: [],
+    perm: [],
+    init() {
+        for(let i=0;i<256;i++) this.p[i] = Math.floor(Math.random()*256);
+        this.perm = new Array(512);
+        for(let i=0;i<512;i++) this.perm[i] = this.p[i & 255];
+    },
+    dot(g,x,y){ return g[0]*x + g[1]*y; },
+    fade(t){ return t*t*t*(t*(t*6-15)+10); },
+    lerp(t,a,b){ return a + t*(b-a); },
+    noise(x,y){
+        let X=Math.floor(x)&255;
+        let Y=Math.floor(y)&255;
+        x-=Math.floor(x);
+        y-=Math.floor(y);
+        let fx=this.fade(x), fy=this.fade(y);
+        let g00=this.grad3[this.perm[X+this.perm[Y]]%12];
+        let g01=this.grad3[this.perm[X+this.perm[Y+1]]%12];
+        let g10=this.grad3[this.perm[X+1+this.perm[Y]]%12];
+        let g11=this.grad3[this.perm[X+1+this.perm[Y+1]]%12];
+        return this.lerp(fy,
+            this.lerp(fx,this.dot(g00,x,y),this.dot(g10,x-1,y)),
+            this.lerp(fx,this.dot(g01,x,y-1),this.dot(g11,x-1,y-1))
+        );
+    }
+};
+Perlin.init();
+
+// SKY PARAMETERS
+const skyLines = [];
+const skyWidth = 120;
+const skyDepth = 120;
+const skySegX = 80;
+const skySegZ = 80;
+const skyHeight = 25;
+
+// CONSTRUCT SKY LINES
+for (let i = 0; i < skySegZ; i++) {
+    for (let j = 0; j < skySegX; j++) {
+        const x1 = (j / skySegX) * skyWidth - skyWidth/2;
+        const x2 = ((j + 1) / skySegX) * skyWidth - skyWidth/2;
+        const z  = (i / skySegZ) * skyDepth - skyDepth/2;
+
+        const geom = new THREE.BufferGeometry();
+        const pos = new Float32Array(6);
+        geom.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+
+        const mat = new THREE.LineBasicMaterial({
+            color: 0x3366ff,
+            transparent: true,
+            opacity: 0.7
+        });
+
+        const line = new THREE.Line(geom, mat);
+        scene.add(line);
+
+        skyLines.push({ line, geom, x1, x2, z });
+    }
+}
+
+function updateSky() {
+    const t = performance.now() * 0.00015;
+
+    for (let i = 0; i < skyLines.length; i++) {
+        const s = skyLines[i];
+        const pos = s.geom.attributes.position.array;
+
+        const n1 = Perlin.noise(s.x1 * 0.05 + t, s.z * 0.05);
+        const n2 = Perlin.noise(s.x2 * 0.05 + t, s.z * 0.05);
+
+        pos[0] = s.x1;
+        pos[1] = skyHeight + n1 * 4;
+        pos[2] = s.z;
+
+        pos[3] = s.x2;
+        pos[4] = skyHeight + n2 * 4;
+        pos[5] = s.z;
+
+        s.geom.attributes.position.needsUpdate = true;
+    }
+}
+
+/* ============================================================ */
+
+// -------------------- ANIMATE --------------------
+function animate(){
     requestAnimationFrame(animate);
-
-    cube.rotation.x += 0.01;
-    cube.rotation.y += 0.01;
-
-    renderer.render(scene, camera);
+    updateMovement();
+    updateMelody();
+    updateAudioSpatial();
+    updateCirclesVisuals();
+    updateMiniMap();
+    updateSky(); // 🌌 <-- ADDED
+    if(timerSeconds <= 240) fadeRectangles();
+    renderer.render(scene,camera);
 }
 animate();
 
-// --- Handle Window Resize ---
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
+// -------------------- RESIZE --------------------
+window.addEventListener("resize",()=>{
+    camera.aspect=window.innerWidth/window.innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(window.innerWidth,window.innerHeight);
 });
-</script>
 
+// -------------------- BUTTON --------------------
+document.getElementById("startAudio").onclick=startAudio;
+
+</script>
 </body>
 </html>
