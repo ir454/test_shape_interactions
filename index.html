@@ -1,142 +1,132 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>3D Realistic Spatial Audio Sphere</title>
-<style>
-  body { margin: 0; overflow: hidden; }
-  canvas { display: block; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Three.js Red Sphere Standalone</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; }
+    canvas { display: block; }
+  </style>
 </head>
 <body>
-<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
+
+<!-- Three.js CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r155/three.min.js"></script>
+
 <script>
-  // ---------- THREE.JS SCENE ----------
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x20232a);
+// -------------------------
+// Scene, Camera, Renderer
+// -------------------------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000000);
 
-  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.set(5, 3, 5);
+const camera = new THREE.PerspectiveCamera(
+  60,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  1000
+);
+camera.position.set(0, 2, 6);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// -------------------------
+// Sphere (Red)
+// -------------------------
+const sphereGeometry = new THREE.SphereGeometry(1, 32, 32);
+const sphereMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+sphere.position.set(0, 1, 0);
+scene.add(sphere);
+
+// -------------------------
+// Grid Floor
+// -------------------------
+const grid = new THREE.GridHelper(50, 50);
+scene.add(grid);
+
+// -------------------------
+// Lights
+// -------------------------
+const light1 = new THREE.DDirectionalLight(0xffffff, 1);
+light1.position.set(5, 10, 7);
+scene.add(light1);
+
+const ambient = new THREE.AmbientLight(0xffffff, 0.3);
+scene.add(ambient);
+
+// -------------------------
+// Keyboard Controls
+// -------------------------
+const keys = {};
+
+window.addEventListener("keydown", (e) => {
+  keys[e.key.toLowerCase()] = true;
+});
+
+window.addEventListener("keyup", (e) => {
+  keys[e.key.toLowerCase()] = false;
+});
+
+function handleMovement(delta) {
+  const speed = 5 * delta;
+  const rotSpeed = 1.5 * delta;
+
+  // Move forward/backward (W/S or up/down arrows)
+  if (keys["w"] || keys["arrowup"]) {
+    camera.position.x -= Math.sin(camera.rotation.y) * speed;
+    camera.position.z -= Math.cos(camera.rotation.y) * speed;
+  }
+  if (keys["s"] || keys["arrowdown"]) {
+    camera.position.x += Math.sin(camera.rotation.y) * speed;
+    camera.position.z += Math.cos(camera.rotation.y) * speed;
+  }
+
+  // Strafe left/right (A/D)
+  if (keys["a"]) {
+    camera.position.x -= Math.cos(camera.rotation.y) * speed;
+    camera.position.z += Math.sin(camera.rotation.y) * speed;
+  }
+  if (keys["d"]) {
+    camera.position.x += Math.cos(camera.rotation.y) * speed;
+    camera.position.z -= Math.sin(camera.rotation.y) * speed;
+  }
+
+  // Rotate camera (left/right arrows)
+  if (keys["arrowleft"]) camera.rotation.y += rotSpeed;
+  if (keys["arrowright"]) camera.rotation.y -= rotSpeed;
+}
+
+// -------------------------
+// Animation Loop
+// -------------------------
+let lastTime = 0;
+
+function animate(time) {
+  requestAnimationFrame(animate);
+
+  let delta = (time - lastTime) / 1000;
+  lastTime = time;
+
+  handleMovement(delta);
+
+  renderer.render(scene, camera);
+}
+
+animate(0);
+
+// -------------------------
+// Window Resize
+// -------------------------
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
-  document.body.appendChild(renderer.domElement);
-
-  const gridHelper = new THREE.GridHelper(50, 50);
-  scene.add(gridHelper);
-
-  const sphere = new THREE.Mesh(
-    new THREE.SphereGeometry(1, 32, 32),
-    new THREE.MeshStandardMaterial({ color: 0xff0000 })
-  );
-  sphere.position.y = 1;
-  scene.add(sphere);
-
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-  scene.add(ambientLight);
-  const pointLight = new THREE.PointLight(0xffffff, 1);
-  pointLight.position.set(5, 10, 5);
-  scene.add(pointLight);
-
-  // ---------- CAMERA CONTROLS ----------
-  const keys = {};
-  window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-  window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-
-  let yaw = 0, pitch = 0;
-  const moveSpeed = 0.1;
-  const turnSpeed = 0.03;
-
-  function updateCamera() {
-    if (keys['arrowleft']) yaw += turnSpeed;
-    if (keys['arrowright']) yaw -= turnSpeed;
-    if (keys['arrowup']) pitch += turnSpeed;
-    if (keys['arrowdown']) pitch -= turnSpeed;
-    pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
-
-    const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)).normalize();
-    const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
-
-    if (keys['w']) camera.position.add(forward.clone().multiplyScalar(moveSpeed));
-    if (keys['s']) camera.position.add(forward.clone().multiplyScalar(-moveSpeed));
-    if (keys['a']) camera.position.add(right.clone().multiplyScalar(-moveSpeed));
-    if (keys['d']) camera.position.add(right.clone().multiplyScalar(moveSpeed));
-    if (keys['q']) camera.position.y += moveSpeed;
-    if (keys['e']) camera.position.y -= moveSpeed;
-
-    camera.rotation.set(pitch, yaw, 0);
-  }
-
-  function animate() {
-    requestAnimationFrame(animate);
-    updateCamera();
-    updateListenerOrientation();
-    renderer.render(scene, camera);
-  }
-  animate();
-
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  });
-
-  // ---------- WEB AUDIO API SPATIAL SOUND ----------
-  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  const cMinor = [261.63, 293.66, 311.13, 349.23, 392.00, 415.30, 466.16];
-  const maxDistance = 30;
-
-  // Update listener position & orientation each frame
-  function updateListenerOrientation() {
-    const forward = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
-    const up = new THREE.Vector3(0, 1, 0);
-    audioCtx.listener.positionX.value = camera.position.x;
-    audioCtx.listener.positionY.value = camera.position.y;
-    audioCtx.listener.positionZ.value = camera.position.z;
-    audioCtx.listener.forwardX.value = forward.x;
-    audioCtx.listener.forwardY.value = forward.y;
-    audioCtx.listener.forwardZ.value = forward.z;
-    audioCtx.listener.upX.value = up.x;
-    audioCtx.listener.upY.value = up.y;
-    audioCtx.listener.upZ.value = up.z;
-  }
-
-  function playReactiveNote() {
-    const distance = camera.position.distanceTo(sphere.position);
-    const volume = Math.max(0, 0.5 * (1 - distance / maxDistance));
-    const pitchVariation = 0.1 * (1 - Math.min(distance, maxDistance) / maxDistance);
-    const index = Math.floor(Math.random() * cMinor.length);
-    let freq = cMinor[index] * (1 + (Math.random() - 0.5) * pitchVariation);
-
-    const osc = audioCtx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.value = freq;
-
-    const gain = audioCtx.createGain();
-    gain.gain.setValueAtTime(0, audioCtx.currentTime);
-    gain.gain.linearRampToValueAtTime(volume, audioCtx.currentTime + 0.02);
-    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.1);
-
-    const panner = audioCtx.createPanner();
-    panner.panningModel = 'HRTF';
-    panner.distanceModel = 'inverse'; // realistic dropoff
-    panner.refDistance = 1;
-    panner.maxDistance = maxDistance;
-    panner.rolloffFactor = 2;
-    panner.setPosition(sphere.position.x, sphere.position.y, sphere.position.z);
-
-    osc.connect(gain).connect(panner).connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.12);
-
-    // Dynamic interval based on distance
-    const minInterval = 100;
-    const maxInterval = 400;
-    const interval = minInterval + (maxInterval - minInterval) * (distance / maxDistance);
-    setTimeout(playReactiveNote, interval);
-  }
-
-  playReactiveNote();
+});
 </script>
+
 </body>
 </html>
