@@ -174,7 +174,18 @@ function startAudio(){
         osc.connect(panner); panner.connect(lowpass); lowpass.connect(gain); gain.connect(audioCtx.destination);
         osc.connect(convolver); convolver.connect(reverbGain); reverbGain.connect(audioCtx.destination);
         osc.start();
-        circleAudio.push({osc,gain,panner,lowpass,nextNoteTime:audioCtx.currentTime+Math.random()*0.5,currentFreq:0,currentVolume:0,lastNoteColor:new THREE.Color(neonColors[i])});
+        // each circle has its own independent note timing
+        circleAudio.push({
+            osc,
+            gain,
+            panner,
+            lowpass,
+            nextNoteTime: audioCtx.currentTime + Math.random()*1.5,
+            noteDuration: 0.2 + Math.random()*0.2,
+            currentFreq: 0,
+            currentVolume: 0,
+            lastNoteColor: new THREE.Color(neonColors[i])
+        });
     }
     audioStarted=true;
     document.getElementById("startAudio").style.display="none";
@@ -195,33 +206,31 @@ function startTimer(){
     },1000);
 }
 
-// -------------------- MELODY --------------------
+// -------------------- POLYPHONIC MELODY --------------------
 function updateMelody(){
     if(!audioStarted) return;
-    const now=audioCtx.currentTime;
-    for(let i=0;i<4;i++){
-        const c=circleAudio[i];
-        if(now>=c.nextNoteTime){
-            const idx=Math.floor(Math.random()*melody.length);
-            const freq=melody[idx];
-            const color=new THREE.Color(`hsl(${Math.random()*360},100%,50%)`);
+    const now = audioCtx.currentTime;
+    circleAudio.forEach((c, i)=>{
+        if(now >= c.nextNoteTime){
+            const idx = Math.floor(Math.random()*melody.length);
+            const freq = melody[idx];
+            const color = new THREE.Color(`hsl(${Math.random()*360},100%,50%)`);
             circles[i].targetColor.copy(color); c.lastNoteColor=color;
 
-            // --- Set oscillator frequency
             c.osc.frequency.setValueAtTime(freq, now);
 
-            // --- Staccato envelope
             const g = c.gain.gain;
             g.cancelScheduledValues(now);
             g.setValueAtTime(0.0001, now);
-            g.linearRampToValueAtTime(0.4, now + 0.03);   // quick attack
-            g.linearRampToValueAtTime(0.0001, now + 0.12); // short release = staccato
+            g.linearRampToValueAtTime(0.3, now + 0.05);    // attack
+            g.linearRampToValueAtTime(0.0001, now + c.noteDuration); // release
 
-            // --- Next note timing
-            c.nextNoteTime = now + 0.18 + Math.random() * 0.08;
-            c.currentFreq=freq;
+            // next note time varies per circle for polyphony
+            c.noteDuration = 0.15 + Math.random()*0.25; // 0.15-0.4s
+            c.nextNoteTime = now + 0.4 + Math.random()*0.8; // 0.4-1.2s between notes
+            c.currentFreq = freq;
         }
-    }
+    });
 }
 
 // -------------------- SPATIAL AUDIO --------------------
