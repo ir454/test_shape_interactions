@@ -411,4 +411,12 @@ animate();
 window.addEventListener("resize",()=>{
     camera.aspect=window.innerWidth/window.innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(window
+    renderer.setSize(window.innerWidth,window.innerHeight);
+});
+
+// -------------------- UI --------------------
+document.getElementById("startAudio").addEventListener("click", startAudio);
+
+</script>
+</body>
+</html>
