@@ -240,14 +240,15 @@ function updateMelody(){
 
             c.osc.frequency.setValueAtTime(freq, now);
 
+            // ----- SMOOTH ATTACK/DECAY -----
             const g = c.gain.gain;
             g.cancelScheduledValues(now);
             g.setValueAtTime(0.0001, now);
-            g.linearRampToValueAtTime(0.3, now + 0.05);    // attack
-            g.linearRampToValueAtTime(0.0001, now + c.noteDuration); // release
+            g.exponentialRampToValueAtTime(0.25, now + 0.08);  // slightly slower attack
+            g.exponentialRampToValueAtTime(0.0001, now + c.noteDuration); // smoother decay
 
-            c.noteDuration = 0.15 + Math.random()*0.25;
-            c.nextNoteTime = now + 0.4 + Math.random()*0.8;
+            c.noteDuration = 0.2 + Math.random()*0.3;
+            c.nextNoteTime = now + 0.5 + Math.random()*0.8;
             c.currentFreq = freq;
         }
     });
@@ -409,14 +410,4 @@ animate();
 
 // -------------------- RESIZE --------------------
 window.addEventListener("resize",()=>{
-    camera.aspect=window.innerWidth/window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth,window.innerHeight);
-});
-
-// -------------------- UI --------------------
-document.getElementById("startAudio").addEventListener("click", startAudio);
-
-</script>
-</body>
-</html>
+    camera.aspect=window.innerWidth/window
