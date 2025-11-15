@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>3D Red Sphere with Staccato C Minor Synth</title>
+<title>3D Realistic Spatial Audio Sphere</title>
 <style>
   body { margin: 0; overflow: hidden; }
   canvas { display: block; }
@@ -11,7 +11,7 @@
 <body>
 <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
 <script>
-  // ---------- THREE.JS SCENE SETUP ----------
+  // ---------- THREE.JS SCENE ----------
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x20232a);
 
@@ -22,25 +22,23 @@
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
 
-  // Grid
   const gridHelper = new THREE.GridHelper(50, 50);
   scene.add(gridHelper);
 
-  // Red sphere
-  const geometry = new THREE.SphereGeometry(1, 32, 32);
-  const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-  const sphere = new THREE.Mesh(geometry, material);
+  const sphere = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 32, 32),
+    new THREE.MeshStandardMaterial({ color: 0xff0000 })
+  );
   sphere.position.y = 1;
   scene.add(sphere);
 
-  // Lights
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
   scene.add(ambientLight);
   const pointLight = new THREE.PointLight(0xffffff, 1);
   pointLight.position.set(5, 10, 5);
   scene.add(pointLight);
 
-  // ---------- FREE-FLY CAMERA WITH ARROW KEYS ----------
+  // ---------- CAMERA CONTROLS ----------
   const keys = {};
   window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
   window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
@@ -72,6 +70,7 @@
   function animate() {
     requestAnimationFrame(animate);
     updateCamera();
+    updateListenerOrientation();
     renderer.render(scene, camera);
   }
   animate();
@@ -82,50 +81,62 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  // ---------- WEB AUDIO API STACCATO SYNTH ----------
+  // ---------- WEB AUDIO API SPATIAL SOUND ----------
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   const cMinor = [261.63, 293.66, 311.13, 349.23, 392.00, 415.30, 466.16];
+  const maxDistance = 30;
 
-  function playStaccatoNote() {
-    const index = Math.floor(Math.random() * cMinor.length);
-    let freq = cMinor[index];
+  // Update listener position & orientation each frame
+  function updateListenerOrientation() {
+    const forward = new THREE.Vector3(0, 0, -1).applyEuler(camera.rotation);
+    const up = new THREE.Vector3(0, 1, 0);
+    audioCtx.listener.positionX.value = camera.position.x;
+    audioCtx.listener.positionY.value = camera.position.y;
+    audioCtx.listener.positionZ.value = camera.position.z;
+    audioCtx.listener.forwardX.value = forward.x;
+    audioCtx.listener.forwardY.value = forward.y;
+    audioCtx.listener.forwardZ.value = forward.z;
+    audioCtx.listener.upX.value = up.x;
+    audioCtx.listener.upY.value = up.y;
+    audioCtx.listener.upZ.value = up.z;
+  }
 
-    // Distance-based volume and pitch shift
+  function playReactiveNote() {
     const distance = camera.position.distanceTo(sphere.position);
-    const maxDistance = 30;
     const volume = Math.max(0, 0.5 * (1 - distance / maxDistance));
-    const pitchShift = 1 + (0.05 * (1 - Math.min(distance, maxDistance) / maxDistance));
-    freq *= pitchShift;
+    const pitchVariation = 0.1 * (1 - Math.min(distance, maxDistance) / maxDistance);
+    const index = Math.floor(Math.random() * cMinor.length);
+    let freq = cMinor[index] * (1 + (Math.random() - 0.5) * pitchVariation);
 
     const osc = audioCtx.createOscillator();
     osc.type = 'sine';
     osc.frequency.value = freq;
 
     const gain = audioCtx.createGain();
-    // Staccato: quick attack & release
     gain.gain.setValueAtTime(0, audioCtx.currentTime);
     gain.gain.linearRampToValueAtTime(volume, audioCtx.currentTime + 0.02);
-    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.1); // short note
+    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.1);
 
     const panner = audioCtx.createPanner();
     panner.panningModel = 'HRTF';
-    panner.distanceModel = 'linear';
+    panner.distanceModel = 'inverse'; // realistic dropoff
     panner.refDistance = 1;
     panner.maxDistance = maxDistance;
     panner.rolloffFactor = 2;
     panner.setPosition(sphere.position.x, sphere.position.y, sphere.position.z);
 
     osc.connect(gain).connect(panner).connect(audioCtx.destination);
-
     osc.start();
     osc.stop(audioCtx.currentTime + 0.12);
 
-    // Random interval between staccato notes
-    setTimeout(playStaccatoNote, 150 + Math.random() * 300);
+    // Dynamic interval based on distance
+    const minInterval = 100;
+    const maxInterval = 400;
+    const interval = minInterval + (maxInterval - minInterval) * (distance / maxDistance);
+    setTimeout(playReactiveNote, interval);
   }
 
-  playStaccatoNote();
-
+  playReactiveNote();
 </script>
 </body>
 </html>
