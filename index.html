@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!DOCTYPE html> 
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -134,15 +134,26 @@ function updateMovement(){
 let audioCtx, audioStarted=false;
 const circleAudio=[];
 
-// --- C-minor scale (C, D, Eb, F, G, Ab, Bb) ---
+// --- C-minor pentatonic three octaves ---
 const melody = [
-    261.63,  // C
-    293.66,  // D
-    311.13,  // Eb
-    349.23,  // F
-    392.00,  // G
-    415.30,  // Ab
-    466.16   // Bb
+    // Octave 1
+    130.81, // C3
+    155.56, // Eb3
+    174.61, // F3
+    196.00, // G3
+    233.08, // Bb3
+    // Octave 2
+    261.63, // C4
+    311.13, // Eb4
+    349.23, // F4
+    392.00, // G4
+    466.16, // Bb4
+    // Octave 3
+    523.25, // C5
+    622.25, // Eb5
+    698.46, // F5
+    783.99, // G5
+    932.33  // Bb5
 ];
 
 function createImpulseResponse(ctx,duration=1.0,decay=1.0){
@@ -174,7 +185,6 @@ function startAudio(){
         osc.connect(panner); panner.connect(lowpass); lowpass.connect(gain); gain.connect(audioCtx.destination);
         osc.connect(convolver); convolver.connect(reverbGain); reverbGain.connect(audioCtx.destination);
         osc.start();
-        // each circle has its own independent note timing
         circleAudio.push({
             osc,
             gain,
@@ -212,10 +222,21 @@ function updateMelody(){
     const now = audioCtx.currentTime;
     circleAudio.forEach((c, i)=>{
         if(now >= c.nextNoteTime){
-            const idx = Math.floor(Math.random()*melody.length);
-            const freq = melody[idx];
+            // Weighted random octave selection
+            const octaveWeights = [0.5, 0.3, 0.2]; 
+            let r = Math.random();
+            let octave = 0;
+            if(r < octaveWeights[0]) octave = 0;
+            else if(r < octaveWeights[0]+octaveWeights[1]) octave = 1;
+            else octave = 2;
+
+            const scaleNotes = [0,1,2,3,4]; // pentatonic indices
+            const noteIdx = scaleNotes[Math.floor(Math.random()*scaleNotes.length)];
+            const freq = melody[octave*5 + noteIdx];
+
             const color = new THREE.Color(`hsl(${Math.random()*360},100%,50%)`);
-            circles[i].targetColor.copy(color); c.lastNoteColor=color;
+            circles[i].targetColor.copy(color); 
+            c.lastNoteColor=color;
 
             c.osc.frequency.setValueAtTime(freq, now);
 
@@ -225,9 +246,8 @@ function updateMelody(){
             g.linearRampToValueAtTime(0.3, now + 0.05);    // attack
             g.linearRampToValueAtTime(0.0001, now + c.noteDuration); // release
 
-            // next note time varies per circle for polyphony
-            c.noteDuration = 0.15 + Math.random()*0.25; // 0.15-0.4s
-            c.nextNoteTime = now + 0.4 + Math.random()*0.8; // 0.4-1.2s between notes
+            c.noteDuration = 0.15 + Math.random()*0.25;
+            c.nextNoteTime = now + 0.4 + Math.random()*0.8;
             c.currentFreq = freq;
         }
     });
@@ -391,12 +411,4 @@ animate();
 window.addEventListener("resize",()=>{
     camera.aspect=window.innerWidth/window.innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth,window.innerHeight);
-});
-
-// -------------------- BUTTON --------------------
-document.getElementById("startAudio").onclick=startAudio;
-
-</script>
-</body>
-</html>
+    renderer.setSize(window
