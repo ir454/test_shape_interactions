@@ -1,114 +1,131 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Three.js Free-Fly Camera Example</title>
-  <style>
-    body { margin: 0; overflow: hidden; cursor: none; } /* hide cursor for free-fly */
-    canvas { display: block; }
-  </style>
+<meta charset="UTF-8">
+<title>3D Red Sphere with Staccato C Minor Synth</title>
+<style>
+  body { margin: 0; overflow: hidden; }
+  canvas { display: block; }
+</style>
 </head>
 <body>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
-  <script>
-    // Scene, Camera, Renderer
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x20232a);
+<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
+<script>
+  // ---------- THREE.JS SCENE SETUP ----------
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x20232a);
 
-    const camera = new THREE.PerspectiveCamera(
-      75,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      1000
-    );
-    camera.position.set(5, 3, 5);
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+  camera.position.set(5, 3, 5);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  // Grid
+  const gridHelper = new THREE.GridHelper(50, 50);
+  scene.add(gridHelper);
+
+  // Red sphere
+  const geometry = new THREE.SphereGeometry(1, 32, 32);
+  const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+  const sphere = new THREE.Mesh(geometry, material);
+  sphere.position.y = 1;
+  scene.add(sphere);
+
+  // Lights
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+  scene.add(ambientLight);
+  const pointLight = new THREE.PointLight(0xffffff, 1);
+  pointLight.position.set(5, 10, 5);
+  scene.add(pointLight);
+
+  // ---------- FREE-FLY CAMERA WITH ARROW KEYS ----------
+  const keys = {};
+  window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+  window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+  let yaw = 0, pitch = 0;
+  const moveSpeed = 0.1;
+  const turnSpeed = 0.03;
+
+  function updateCamera() {
+    if (keys['arrowleft']) yaw += turnSpeed;
+    if (keys['arrowright']) yaw -= turnSpeed;
+    if (keys['arrowup']) pitch += turnSpeed;
+    if (keys['arrowdown']) pitch -= turnSpeed;
+    pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+
+    const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)).normalize();
+    const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+
+    if (keys['w']) camera.position.add(forward.clone().multiplyScalar(moveSpeed));
+    if (keys['s']) camera.position.add(forward.clone().multiplyScalar(-moveSpeed));
+    if (keys['a']) camera.position.add(right.clone().multiplyScalar(-moveSpeed));
+    if (keys['d']) camera.position.add(right.clone().multiplyScalar(moveSpeed));
+    if (keys['q']) camera.position.y += moveSpeed;
+    if (keys['e']) camera.position.y -= moveSpeed;
+
+    camera.rotation.set(pitch, yaw, 0);
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    updateCamera();
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
+  });
 
-    // Grid floor
-    const gridHelper = new THREE.GridHelper(50, 50);
-    scene.add(gridHelper);
+  // ---------- WEB AUDIO API STACCATO SYNTH ----------
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const cMinor = [261.63, 293.66, 311.13, 349.23, 392.00, 415.30, 466.16];
 
-    // Red sphere
-    const geometry = new THREE.SphereGeometry(1, 32, 32);
-    const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-    const sphere = new THREE.Mesh(geometry, material);
-    sphere.position.y = 1;
-    scene.add(sphere);
+  function playStaccatoNote() {
+    const index = Math.floor(Math.random() * cMinor.length);
+    let freq = cMinor[index];
 
-    // Lights
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambientLight);
-    const pointLight = new THREE.PointLight(0xffffff, 1);
-    pointLight.position.set(5, 10, 5);
-    scene.add(pointLight);
+    // Distance-based volume and pitch shift
+    const distance = camera.position.distanceTo(sphere.position);
+    const maxDistance = 30;
+    const volume = Math.max(0, 0.5 * (1 - distance / maxDistance));
+    const pitchShift = 1 + (0.05 * (1 - Math.min(distance, maxDistance) / maxDistance));
+    freq *= pitchShift;
 
-    // Free-fly controls
-    const keys = {};
-    const moveSpeed = 0.1;
-    let yaw = 0;   // rotation around y-axis
-    let pitch = 0; // rotation around x-axis
-    let isPointerLocked = false;
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
 
-    // Pointer lock for FPS-style mouse control
-    document.body.addEventListener('click', () => {
-      document.body.requestPointerLock();
-    });
+    const gain = audioCtx.createGain();
+    // Staccato: quick attack & release
+    gain.gain.setValueAtTime(0, audioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(volume, audioCtx.currentTime + 0.02);
+    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.1); // short note
 
-    document.addEventListener('pointerlockchange', () => {
-      isPointerLocked = document.pointerLockElement === document.body;
-    });
+    const panner = audioCtx.createPanner();
+    panner.panningModel = 'HRTF';
+    panner.distanceModel = 'linear';
+    panner.refDistance = 1;
+    panner.maxDistance = maxDistance;
+    panner.rolloffFactor = 2;
+    panner.setPosition(sphere.position.x, sphere.position.y, sphere.position.z);
 
-    // Mouse movement
-    document.addEventListener('mousemove', (e) => {
-      if (!isPointerLocked) return;
-      const sensitivity = 0.002;
-      yaw -= e.movementX * sensitivity;
-      pitch -= e.movementY * sensitivity;
-      pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch)); // clamp pitch
-    });
+    osc.connect(gain).connect(panner).connect(audioCtx.destination);
 
-    // Keyboard movement
-    window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-    window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.12);
 
-    function updateCamera() {
-      const forward = new THREE.Vector3(
-        -Math.sin(yaw),
-        0,
-        -Math.cos(yaw)
-      ).normalize();
+    // Random interval between staccato notes
+    setTimeout(playStaccatoNote, 150 + Math.random() * 300);
+  }
 
-      const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+  playStaccatoNote();
 
-      // Move camera based on keys
-      if (keys['w']) camera.position.add(forward.clone().multiplyScalar(moveSpeed));
-      if (keys['s']) camera.position.add(forward.clone().multiplyScalar(-moveSpeed));
-      if (keys['a']) camera.position.add(right.clone().multiplyScalar(-moveSpeed));
-      if (keys['d']) camera.position.add(right.clone().multiplyScalar(moveSpeed));
-      if (keys['q']) camera.position.y += moveSpeed;
-      if (keys['e']) camera.position.y -= moveSpeed;
-
-      // Apply rotation
-      camera.rotation.set(pitch, yaw, 0);
-    }
-
-    // Animation loop
-    function animate() {
-      requestAnimationFrame(animate);
-      updateCamera();
-      renderer.render(scene, camera);
-    }
-    animate();
-
-    // Window resize
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-  </script>
+</script>
 </body>
 </html>
