@@ -1,173 +1,37 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>Polyphonic C-minor Visuals with ADSR</title>
-<style>
-  body { margin: 0; overflow: hidden; background: #000; }
-</style>
-</head>
-<body>
-<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
-<script>
-let scene, camera, renderer;
-let circles = [], circleSegments = [];
-let circleAudio = [];
-let audioCtx, audioStarted = false;
+for (let i = 0; i < 4; i++) {
+    const circleData = circles[i];
+    const time = performance.now() / 1000;
+    circleData.mesh.position.y = circleData.baseY + Math.sin(time + i) * 0.3;
 
-const melody = [261.63, 293.66, 311.13, 349.23, 392.00, 415.30, 466.16]; // C minor
-const ADSR = { attack: 0.15, decay: 0.2, sustain: 0.5, release: 0.4 };
+    // Smooth color
+    circleData.currentColor.lerp(circleData.targetColor, 0.02);
+    circleData.mesh.material.color.copy(circleData.currentColor);
+    circleData.mesh.material.emissive.copy(circleData.currentColor);
 
-// Initialize Three.js
-function init() {
-    scene = new THREE.Scene();
-    camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
-    camera.position.z = 8;
-    renderer = new THREE.WebGLRenderer({antialias:true});
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
-
-    const geometry = new THREE.CircleGeometry(0.5, 32);
-    for (let i = 0; i < 4; i++) {
-        const material = new THREE.MeshStandardMaterial({color: 0xffffff, emissive:0x000000});
-        const circle = new THREE.Mesh(geometry, material);
-        circle.position.x = (i-1.5)*2;
-        circle.position.y = 0;
-        circle.baseY = circle.position.y;
-        circle.targetColor = new THREE.Color(0xffffff);
-        circle.currentColor = new THREE.Color(0xffffff);
-        scene.add(circle);
-        circles.push(circle);
-
-        // Line segments
-        const segs = [];
-        for(let j=0;j<8;j++){
-            const lineGeom = new THREE.BufferGeometry();
-            lineGeom.setAttribute('position', new THREE.Float32BufferAttribute([0,0,0,0,0,0],3));
-            const lineMat = new THREE.LineBasicMaterial({color:0xffffff});
-            const line = new THREE.Line(lineGeom, lineMat);
-            scene.add(line);
-            segs.push({line:line, geom:lineGeom});
-        }
-        circleSegments.push(segs);
+    // Visual ADSR scaling
+    const cAudio = circleAudio[i];
+    if (cAudio.visualStartTime) {
+        const t = audioCtx.currentTime - cAudio.visualStartTime;
+        let scale = 1.0;
+        if (t < ADSR.attack) scale = 1 + 0.5 * (t / ADSR.attack); // Attack
+        else if (t < ADSR.attack + ADSR.decay) scale = 1.5 - 0.1 * ((t - ADSR.attack) / ADSR.decay); // Decay
+        else if (t < ADSR.attack + ADSR.decay + ADSR.release) scale = 1.4 * (1 - (t - ADSR.attack - ADSR.decay) / ADSR.release); // Release
+        else scale = 1.0;
+        circleData.mesh.scale.set(scale, scale, scale);
     }
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.4);
-    scene.add(ambient);
-    const dirLight = new THREE.DirectionalLight(0xffffff,0.8);
-    dirLight.position.set(5,5,5);
-    scene.add(dirLight);
-
-    // Initialize Audio
-    audioCtx = new (window.AudioContext||window.webkitAudioContext)();
-    for (let i=0;i<4;i++){
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        gain.gain.value = 0;
-        osc.connect(gain).connect(audioCtx.destination);
-        osc.start();
-        circleAudio.push({
-            osc:osc,
-            gain:gain,
-            nextNoteTime:0,
-            currentFreq:440,
-            visualStartTime:null,
-            visualDuration:0
-        });
-    }
-
-    animate();
-}
-
-// Schedule melody notes with smooth ADSR
-function updateMelody(){
-    if(!audioStarted) return;
-    const now = audioCtx.currentTime;
-    circleAudio.forEach((c,i)=>{
-        if(now>=c.nextNoteTime){
-            const idx = Math.floor(Math.random()*melody.length);
-            const freq = melody[idx];
-            const color = new THREE.Color(`hsl(${Math.random()*360},100%,50%)`);
-            circles[i].targetColor.copy(color);
-            c.osc.frequency.setValueAtTime(freq, now);
-
-            const g = c.gain.gain;
-            g.cancelScheduledValues(now);
-            g.setValueAtTime(0.0001, now);
-            g.linearRampToValueAtTime(0.6, now+ADSR.attack);
-            g.linearRampToValueAtTime(ADSR.sustain*0.6, now+ADSR.attack+ADSR.decay);
-            g.setValueAtTime(ADSR.sustain*0.6, now+ADSR.attack+ADSR.decay);
-            g.linearRampToValueAtTime(0.0001, now+ADSR.attack+ADSR.decay+ADSR.release);
-
-            c.visualStartTime = now;
-            c.visualDuration = ADSR.attack+ADSR.decay+ADSR.release;
-
-            c.noteDuration = 0.15 + Math.random()*0.3;
-            c.nextNoteTime = now + 0.6 + Math.random()*0.8;
-            c.currentFreq = freq;
-        }
-    });
-}
-
-// Update circle visuals including ADSR scaling
-function updateCirclesVisuals(){
-    const t = performance.now()/1000;
-    for(let i=0;i<4;i++){
-        const cData = circles[i];
-        const cAudio = circleAudio[i];
-
-        cData.mesh.position.y = cData.baseY + Math.sin(t+i)*0.3;
-
-        // Smooth color
-        cData.currentColor.lerp(cData.targetColor, 0.02);
-        cData.mesh.material.color.copy(cData.currentColor);
-        cData.mesh.material.emissive.copy(cData.currentColor);
-
-        // Visual ADSR scale
-        if(cAudio.visualStartTime){
-            const dt = audioCtx.currentTime - cAudio.visualStartTime;
-            let scale = 1.0;
-            if(dt<ADSR.attack) scale = 1 + 0.5*(dt/ADSR.attack);
-            else if(dt<ADSR.attack+ADSR.decay) scale = 1.5 - 0.1*((dt-ADSR.attack)/ADSR.decay);
-            else if(dt<ADSR.attack+ADSR.decay+ADSR.release) scale = 1.4*(1-(dt-ADSR.attack-ADSR.decay)/ADSR.release);
-            else scale = 1.0;
-            cData.mesh.scale.set(scale, scale, scale);
-        }
-
-        // Segments react to amplitude
-        const segs = circleSegments[i];
-        for(let j=0;j<segs.length;j++){
-            const seg = segs[j];
-            const freq = cAudio?.currentFreq || 440;
-            const amp = 0.2 + 0.1*Math.sin(t*2 + j);
-            const len = 2*(0.5+amp)*Math.sin(freq*t+j);
-            const pos = seg.geom.attributes.position.array;
-            pos[0]=0; pos[1]=0; pos[2]=0;
-            pos[3]=0; pos[4]=len; pos[5]=0;
-            seg.geom.attributes.position.needsUpdate=true;
-            const brightness = 0.5 + 0.5*amp;
-            seg.line.material.color.copy(cData.currentColor).multiplyScalar(brightness);
-        }
+    // Segments (lines) still follow amplitude
+    const segs = circleSegments[i];
+    for (let j = 0; j < segs.length; j++) {
+        const seg = segs[j];
+        const freq = cAudio?.currentFreq || 440;
+        const amp = cAudio?.currentVolume || 0;
+        const len = 2 * (0.5 + amp) * Math.sin(freq * time + j);
+        const positions = seg.geom.attributes.position.array;
+        positions[0] = 0; positions[1] = 0; positions[2] = 0;
+        positions[3] = 0; positions[4] = len; positions[5] = 0;
+        seg.geom.attributes.position.needsUpdate = true;
+        const brightness = 0.5 + 0.5 * amp;
+        seg.line.material.color.copy(circleData.currentColor).multiplyScalar(brightness);
     }
 }
-
-// Animate
-function animate(){
-    requestAnimationFrame(animate);
-    updateMelody();
-    updateCirclesVisuals();
-    renderer.render(scene,camera);
-}
-
-// Start audio on first user interaction
-document.body.addEventListener('click',()=>{
-    if(!audioStarted){
-        audioCtx.resume();
-        audioStarted=true;
-    }
-});
-
-init();
-</script>
-</body>
-</html>
