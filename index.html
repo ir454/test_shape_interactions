@@ -180,7 +180,8 @@ function startAudio(){
             noteDuration: 0.2 + Math.random()*0.2,
             currentFreq: 0,
             currentVolume: 0,
-            lastNoteColor: new THREE.Color(neonColors[i])
+            lastNoteColor: new THREE.Color(neonColors[i]),
+            pointillistic: false
         });
     }
     audioStarted=true;
@@ -195,6 +196,9 @@ function startTimer(){
         timerSeconds--;
         if(timerSeconds===240) startDrumMachine();
         if(timerSeconds===120) stopDrumMachine();
+        if(timerSeconds===60){ // 1 minute left
+            circleAudio.forEach(c=>c.pointillistic=true);
+        }
         if(timerSeconds<=0){ clearInterval(timerInterval); stopAudio(); stopDrumMachine(); }
         const min=Math.floor(timerSeconds/60).toString().padStart(2,'0');
         const sec=(timerSeconds%60).toString().padStart(2,'0');
@@ -220,12 +224,22 @@ function updateMelody(){
 
             const g = c.gain.gain;
             g.cancelScheduledValues(now);
-            g.setValueAtTime(0.0001, now);
-            g.linearRampToValueAtTime(0.3, now + 0.05);
-            g.linearRampToValueAtTime(0.0001, now + c.noteDuration);
 
-            c.noteDuration = 0.15 + Math.random()*0.25;
-            c.nextNoteTime = now + 0.4 + Math.random()*0.8;
+            // Pointillistic mode: short staccato beeps
+            if(c.pointillistic){
+                g.setValueAtTime(0.0001, now);
+                g.linearRampToValueAtTime(0.3, now + 0.02);
+                g.linearRampToValueAtTime(0.0001, now + 0.08);
+                c.noteDuration = 0.05 + Math.random()*0.1;
+                c.nextNoteTime = now + 0.15 + Math.random()*0.2;
+            } else {
+                g.setValueAtTime(0.0001, now);
+                g.linearRampToValueAtTime(0.3, now + 0.05);
+                g.linearRampToValueAtTime(0.0001, now + c.noteDuration);
+                c.noteDuration = 0.15 + Math.random()*0.25;
+                c.nextNoteTime = now + 0.4 + Math.random()*0.8;
+            }
+
             c.currentFreq = freq;
         }
     });
@@ -392,8 +406,8 @@ window.addEventListener("resize",()=>{
     renderer.setSize(window.innerWidth,window.innerHeight);
 });
 
-// -------------------- BUTTON --------------------
-document.getElementById("startAudio").onclick=startAudio;
+// -------------------- START AUDIO BUTTON --------------------
+document.getElementById("startAudio").addEventListener("click", startAudio);
 
 </script>
 </body>
