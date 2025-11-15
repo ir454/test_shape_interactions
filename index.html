@@ -134,27 +134,13 @@ function updateMovement(){
 let audioCtx, audioStarted=false;
 const circleAudio=[];
 
-// --- C-minor pentatonic three octaves ---
-const melody = [
-    // Octave 1
-    130.81, // C3
-    155.56, // Eb3
-    174.61, // F3
-    196.00, // G3
-    233.08, // Bb3
-    // Octave 2
-    261.63, // C4
-    311.13, // Eb4
-    349.23, // F4
-    392.00, // G4
-    466.16, // Bb4
-    // Octave 3
-    523.25, // C5
-    622.25, // Eb5
-    698.46, // F5
-    783.99, // G5
-    932.33  // Bb5
-];
+// --- C-minor pentatonic over 3 octaves ---
+const baseMelody = [261.63, 311.13, 349.23, 392.00, 466.16]; // C, Eb, F, G, Bb
+const melody = [];
+for(let o=0;o<3;o++){ // 3 octaves
+    const octaveMul = Math.pow(2,o);
+    baseMelody.forEach(n=>melody.push(n*octaveMul));
+}
 
 function createImpulseResponse(ctx,duration=1.0,decay=1.0){
     const rate=ctx.sampleRate;
@@ -222,33 +208,24 @@ function updateMelody(){
     const now = audioCtx.currentTime;
     circleAudio.forEach((c, i)=>{
         if(now >= c.nextNoteTime){
-            // Weighted random octave selection
-            const octaveWeights = [0.5, 0.3, 0.2]; 
-            let r = Math.random();
-            let octave = 0;
-            if(r < octaveWeights[0]) octave = 0;
-            else if(r < octaveWeights[0]+octaveWeights[1]) octave = 1;
-            else octave = 2;
-
-            const scaleNotes = [0,1,2,3,4]; // pentatonic indices
-            const noteIdx = scaleNotes[Math.floor(Math.random()*scaleNotes.length)];
-            const freq = melody[octave*5 + noteIdx];
-
+            const idx = Math.floor(Math.random()*melody.length);
+            const freq = melody[idx];
             const color = new THREE.Color(`hsl(${Math.random()*360},100%,50%)`);
-            circles[i].targetColor.copy(color); 
-            c.lastNoteColor=color;
+            circles[i].targetColor.copy(color); c.lastNoteColor=color;
 
-            c.osc.frequency.setValueAtTime(freq, now);
+            // Smooth pitch transition
+            c.osc.frequency.cancelScheduledValues(now);
+            c.osc.frequency.setValueAtTime(c.currentFreq || freq, now);
+            c.osc.frequency.exponentialRampToValueAtTime(freq, now + 0.08);
 
-            // ----- SMOOTH ATTACK/DECAY -----
             const g = c.gain.gain;
             g.cancelScheduledValues(now);
             g.setValueAtTime(0.0001, now);
-            g.exponentialRampToValueAtTime(0.25, now + 0.08);  // slightly slower attack
-            g.exponentialRampToValueAtTime(0.0001, now + c.noteDuration); // smoother decay
+            g.linearRampToValueAtTime(0.3, now + 0.05);
+            g.linearRampToValueAtTime(0.0001, now + c.noteDuration);
 
-            c.noteDuration = 0.2 + Math.random()*0.3;
-            c.nextNoteTime = now + 0.5 + Math.random()*0.8;
+            c.noteDuration = 0.15 + Math.random()*0.25;
+            c.nextNoteTime = now + 0.4 + Math.random()*0.8;
             c.currentFreq = freq;
         }
     });
@@ -415,8 +392,8 @@ window.addEventListener("resize",()=>{
     renderer.setSize(window.innerWidth,window.innerHeight);
 });
 
-// -------------------- UI --------------------
-document.getElementById("startAudio").addEventListener("click", startAudio);
+// -------------------- BUTTON --------------------
+document.getElementById("startAudio").onclick=startAudio;
 
 </script>
 </body>
