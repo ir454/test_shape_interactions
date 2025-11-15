@@ -42,23 +42,15 @@
     pointLight.position.set(5, 5, 5);
     scene.add(pointLight);
 
-    // Animation loop
-    function animate() {
-      requestAnimationFrame(animate);
-
-      // Rotate cube
-      cube.rotation.x += 0.01;
-      cube.rotation.y += 0.01;
-
-      renderer.render(scene, camera);
-    }
-    animate();
+    // Render once (no rotation)
+    renderer.render(scene, camera);
 
     // Handle window resize
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.render(scene, camera); // re-render on resize
     });
   </script>
 </body>
