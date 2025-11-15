@@ -2,55 +2,112 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Three.js Cube Example</title>
+  <title>Three.js Free-Fly Camera Example</title>
   <style>
-    body { margin: 0; overflow: hidden; }
+    body { margin: 0; overflow: hidden; cursor: none; } /* hide cursor for free-fly */
     canvas { display: block; }
   </style>
 </head>
 <body>
-  <!-- Include Three.js from a CDN -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
   <script>
     // Scene, Camera, Renderer
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x20232a); // Dark background
+    scene.background = new THREE.Color(0x20232a);
 
     const camera = new THREE.PerspectiveCamera(
-      75, 
-      window.innerWidth / window.innerHeight, 
-      0.1, 
+      75,
+      window.innerWidth / window.innerHeight,
+      0.1,
       1000
     );
-    camera.position.z = 5;
+    camera.position.set(5, 3, 5);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    // Cube Geometry and Material
-    const geometry = new THREE.BoxGeometry(1, 1, 1);
-    const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
-    const cube = new THREE.Mesh(geometry, material);
-    scene.add(cube);
+    // Grid floor
+    const gridHelper = new THREE.GridHelper(50, 50);
+    scene.add(gridHelper);
 
-    // Add light
+    // Red sphere
+    const geometry = new THREE.SphereGeometry(1, 32, 32);
+    const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+    const sphere = new THREE.Mesh(geometry, material);
+    sphere.position.y = 1;
+    scene.add(sphere);
+
+    // Lights
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
-
     const pointLight = new THREE.PointLight(0xffffff, 1);
-    pointLight.position.set(5, 5, 5);
+    pointLight.position.set(5, 10, 5);
     scene.add(pointLight);
 
-    // Render once (no rotation)
-    renderer.render(scene, camera);
+    // Free-fly controls
+    const keys = {};
+    const moveSpeed = 0.1;
+    let yaw = 0;   // rotation around y-axis
+    let pitch = 0; // rotation around x-axis
+    let isPointerLocked = false;
 
-    // Handle window resize
+    // Pointer lock for FPS-style mouse control
+    document.body.addEventListener('click', () => {
+      document.body.requestPointerLock();
+    });
+
+    document.addEventListener('pointerlockchange', () => {
+      isPointerLocked = document.pointerLockElement === document.body;
+    });
+
+    // Mouse movement
+    document.addEventListener('mousemove', (e) => {
+      if (!isPointerLocked) return;
+      const sensitivity = 0.002;
+      yaw -= e.movementX * sensitivity;
+      pitch -= e.movementY * sensitivity;
+      pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch)); // clamp pitch
+    });
+
+    // Keyboard movement
+    window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+    window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+    function updateCamera() {
+      const forward = new THREE.Vector3(
+        -Math.sin(yaw),
+        0,
+        -Math.cos(yaw)
+      ).normalize();
+
+      const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+
+      // Move camera based on keys
+      if (keys['w']) camera.position.add(forward.clone().multiplyScalar(moveSpeed));
+      if (keys['s']) camera.position.add(forward.clone().multiplyScalar(-moveSpeed));
+      if (keys['a']) camera.position.add(right.clone().multiplyScalar(-moveSpeed));
+      if (keys['d']) camera.position.add(right.clone().multiplyScalar(moveSpeed));
+      if (keys['q']) camera.position.y += moveSpeed;
+      if (keys['e']) camera.position.y -= moveSpeed;
+
+      // Apply rotation
+      camera.rotation.set(pitch, yaw, 0);
+    }
+
+    // Animation loop
+    function animate() {
+      requestAnimationFrame(animate);
+      updateCamera();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Window resize
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.render(scene, camera); // re-render on resize
     });
   </script>
 </body>
